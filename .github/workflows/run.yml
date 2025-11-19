@@ -44,7 +44,7 @@ jobs:
         
         # 检查爬取是否成功
         if [ ! -f "../data/${today}.jsonl" ]; then
-            echo "爬取失败，未生成数据文件
+            echo "爬取失败，未生成数据文件"
             exit 1
         fi
         
