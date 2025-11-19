@@ -35,7 +35,7 @@ jobs:
         source .venv/bin/activate
         today=$(date -u "+%Y-%m-%d")
         echo "开始爬取 $today 的arXiv论文"
-        export CATEGORIES="${CATEGORIES:-math.QA}"
+        export CATEGORIES="${CATEGORIES:-cs.CV, cs.CL, cs.AI, cs.LG, cs.IT, math.IT, stat.ML, eess.IV}"
         echo "爬取类别： $CATEGORIES"
         cd daily_arxiv
         
