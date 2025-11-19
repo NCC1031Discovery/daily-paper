@@ -18,7 +18,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v5.0.0
       with:
-        repository: daily-paper-private
+        repository: ncc1031discovery/daily-paper-private
         token: ${{ secrets.DAILY_PAPER_PRIVATE_TOKEN }}
         path: daily-paper-private
 
