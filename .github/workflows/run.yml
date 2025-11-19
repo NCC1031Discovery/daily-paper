@@ -50,7 +50,18 @@ jobs:
         
         echo "crawl_date=$today" >> $GITHUB_OUTPUT
         echo "爬取完成"
-        
+
+    - name: Download previous data
+      run: |
+        cd daily-paper-private
+        source .venv/bin/activate
+        for previous_data in $(curl -s https://api.github.com/repos/NCC1031Discovery/daily-paper/releases | grep browser_download_url | cut -d'"' -f4 |grep -F '.jsonl'); do
+          the_date=$(echo $previous_data | cut -d'/' -f8)
+          filename=$(echo $previous_data | cut -d'/' -f9)
+          echo "下载: ${the_date} 的数据"
+          curl -L -o data/${filename} ${previous_data}
+        done
+
     - name: Check for duplicates
       id: dedup_check
       run: |
