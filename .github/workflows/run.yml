@@ -4,9 +4,10 @@
 name: my-daily-arXiv
 
 on:
-  schedule:
-    - cron: '22 1 * * *'
   workflow_dispatch:
+  schedule:
+    - cron: '15 3 * * *'
+  
 
 
 jobs:
