@@ -1,0 +1,150 @@
+
+name: my-daily-arXiv
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '12 2 * * *'
+  
+
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v5.0.0
+      with:
+        repository: ${{ secrets.DP_REPO }}
+        token: ${{ secrets.DP_1 }}
+        path: workflowspace
+
+    - name: Install dependencies
+      run: |
+        cd workflowspace
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        uv sync
+        
+    - name: Crawl arXiv papers
+      id: crawl_step
+      run: |
+        cd workflowspace
+        source .venv/bin/activate
+        today=$(date -u "+%Y-%m-%d")
+        echo "开始爬取 $today 的arXiv论文"
+        export CATEGORIES="${CATEGORIES:-cs.CV, cs.CL, cs.AI, cs.LG, cs.IT, math.IT, stat.ML, eess.IV}"
+        echo "爬取类别： $CATEGORIES"
+        cd daily_arxiv
+        
+        # 使用Scrapy爬取
+        scrapy crawl arxiv -o ../data/${today}.jsonl
+        
+        # 检查爬取是否成功
+        if [ ! -f "../data/${today}.jsonl" ]; then
+            echo "爬取失败，未生成数据文件"
+            exit 1
+        fi
+        
+        echo "crawl_date=$today" >> $GITHUB_OUTPUT
+        echo "爬取完成"
+
+    - name: Download previous data
+      run: |
+        cd workflowspace
+        source .venv/bin/activate
+        for previous_data in $(curl -s https://api.github.com/repos/${{ secrets.DP_REPO_0 }}/releases | grep browser_download_url | cut -d'"' -f4 |grep -F '.jsonl'); do
+          the_date=$(echo $previous_data | cut -d'/' -f8)
+          filename=$(echo $previous_data | cut -d'/' -f9)
+          echo "下载: ${the_date} 的数据"
+          curl -L -o data/${filename} ${previous_data}
+        done
+
+    - name: Check for duplicates
+      id: dedup_check
+      run: |
+        cd workflowspace
+        source .venv/bin/activate
+        echo "执行去重检查"
+        
+        cd daily_arxiv
+        # 执行去重检查脚本
+        set +e  # 暂时允许命令失败
+        python daily_arxiv/check_stats.py
+        
+        # 获取退出码
+        dedup_exit_code=$?
+        set -e  # 恢复严格模式
+        
+        echo "去重检查退出码: $dedup_exit_code"
+        echo "dedup_exit_code=$dedup_exit_code" >> $GITHUB_OUTPUT
+        
+        case $dedup_exit_code in
+            0)
+                echo "has_new_content=true" >> $GITHUB_OUTPUT
+                ;;
+            1)
+                echo "has_new_content=false" >> $GITHUB_OUTPUT
+                echo "skip_reason=no_new_content" >> $GITHUB_OUTPUT
+                ;;
+            2)
+                echo "has_new_content=false" >> $GITHUB_OUTPUT
+                echo "skip_reason=processing_error" >> $GITHUB_OUTPUT
+                exit 1
+                ;;
+            *)
+                echo "未知退出码，停止工作流"
+                echo "has_new_content=false" >> $GITHUB_OUTPUT
+                echo "skip_reason=unknown_error" >> $GITHUB_OUTPUT
+                exit 1
+                ;;
+        esac
+        
+    - name: Abstract translation
+      if: steps.dedup_check.outputs.has_new_content == 'true'
+      run: |
+        cd workflowspace
+        source .venv/bin/activate
+        today=${{ steps.crawl_step.outputs.crawl_date }}
+        echo "开始翻译摘要"
+        
+        cd translation
+        python translate_abstract.py --data ../data/${today}.jsonl
+        
+        if [ $? -ne 0 ]; then
+          echo "摘要翻译失败"
+          exit 1
+        fi
+        echo "摘要翻译完成"
+
+    - name: Summary
+      run: |
+        if [ "${{ steps.dedup_check.outputs.has_new_content }}" = "true" ]; then
+          echo "✅ 工作流完成：去重发现新内容并成功处理"
+        else
+          case "${{ steps.dedup_check.outputs.skip_reason }}" in
+            "no_new_content")
+              echo "ℹ️ 工作流完成：去重后无新内容"
+              ;;
+            "processing_error")
+              echo "⚠️ 工作流完成：去重处理出错"
+              ;;
+            "unknown_error")
+              echo "⚠️ 工作流完成：未知错误"
+              ;;
+            *)
+              echo "ℹ️ 工作流完成：未知原因跳过处理"
+              ;;
+          esac
+        fi
+        
+    - name: Release
+      uses: svenstaro/upload-release-action@v2
+      with:
+        repo_token: ${{ secrets.DP_0 }}
+        file: workflowspace/data/${{ steps.crawl_step.outputs.crawl_date }}_AI_enhanced_Chinese.jsonl
+        asset_name: ${{ steps.crawl_step.outputs.crawl_date }}_AI_enhanced_Chinese.jsonl
+        tag: ${{ steps.crawl_step.outputs.crawl_date }}
+        overwrite: true
+        body: ${{ steps.crawl_step.outputs.crawl_date }}
